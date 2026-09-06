@@ -1,64 +1,64 @@
-name: Backend Continuous Deployment
+name: Frontend Continuous Deployment
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'starter/backend/**'
+      - 'starter/frontend/**'
   workflow_dispatch:
 
 defaults:
   run:
-    working-directory: starter/backend
+    working-directory: starter/frontend
 
 jobs:
   lint:
-    name: Backend Lint
+    name: Frontend Lint
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.10'
-
-      - name: Install Pipenv
-        run: pip install pipenv
+          node-version-file: starter/frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
-        run: pipenv install --dev
+        run: npm ci
 
       - name: Run lint
-        run: pipenv run lint
+        run: npm run lint
 
   test:
-    name: Backend Test
+    name: Frontend Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.10'
-
-      - name: Install Pipenv
-        run: pip install pipenv
+          node-version-file: starter/frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
-        run: pipenv install --dev
+        run: npm ci
 
       - name: Run tests
-        run: pipenv run test
+        run: npm test
+        env:
+          CI: true
 
   build:
-    name: Backend Build and Deploy
+    name: Frontend Build and Deploy
     runs-on: ubuntu-latest
     needs:
       - lint
@@ -69,7 +69,8 @@ jobs:
 
     env:
       AWS_REGION: us-east-1
-      ECR_REPOSITORY: 538519242266.dkr.ecr.us-east-1.amazonaws.com/backend
+      ECR_REPOSITORY: 538519242266.dkr.ecr.us-east-1.amazonaws.com/frontend
+      REACT_APP_MOVIE_API_URL: http://a8de4be298c46495eb0b1033e647e5db-1550474936.us-east-1.elb.amazonaws.com
 
     steps:
       - name: Checkout repository
@@ -86,9 +87,10 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push Docker image
-        working-directory: starter/backend
+        working-directory: starter/frontend
         run: |
           docker build \
+            --build-arg REACT_APP_MOVIE_API_URL=$REACT_APP_MOVIE_API_URL \
             --tag $ECR_REPOSITORY:${{ github.sha }} \
             .
           docker push $ECR_REPOSITORY:${{ github.sha }}
@@ -97,8 +99,8 @@ jobs:
         run: aws eks update-kubeconfig --name cluster --region $AWS_REGION
 
       - name: Deploy to Kubernetes
-        working-directory: starter/backend/k8s
+        working-directory: starter/frontend/k8s
         run: |
           kubectl kustomize . | \
-            sed "s#image: backend#image: $ECR_REPOSITORY:${{ github.sha }}#" | \
+            sed "s#image: frontend#image: $ECR_REPOSITORY:${{ github.sha }}#" | \
             kubectl apply -f -
